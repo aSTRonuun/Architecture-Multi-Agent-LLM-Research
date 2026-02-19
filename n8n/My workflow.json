@@ -1,0 +1,253 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -272,
+        0
+      ],
+      "id": "a3c4fd2d-79ba-4cd6-8331-ac5b699ffbce",
+      "name": "Webhook",
+      "webhookId": "b05bc2bc-079a-4d69-8db4-d03dd64175a3"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ec1055bf-d16f-4af7-a4e1-60cd1013b3e7",
+              "leftValue": "={{ $json.response.match(/Status:\\s*(APROVADO|REPROVADO)/)?.[1] }}",
+              "rightValue": "=APROVADO",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": "={{ false }}",
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        592,
+        0
+      ],
+      "id": "ca69d303-c18c-43c1-aedb-80cf5205c272",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama3:8b\",\n  \"prompt\": \"Você é um planner estratégico. Analise a pergunta abaixo e gere um plano curto de como responder.\\n\\nPergunta: {{$json.body.question}}\\n\\nResponda apenas texto.\",\n  \"stream\": false\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -80,
+        0
+      ],
+      "id": "b7667507-7f24-4789-bac3-1d1804fad65f",
+      "name": "Planner"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama3:8b\",\n  \"prompt\": {{ JSON.stringify(\"Você é um especialista.\\n\\nPlano:\\n\" + $node['Planner'].json.response + \"\\n\\nPergunta:\\n\" + $node['Webhook'].json.body.question + \"\\n\\nResposta:\") }},\n  \"stream\": false\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        128,
+        0
+      ],
+      "id": "1fa5b92f-e096-4884-9d02-b68cb845b437",
+      "name": "Analyst"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama3:8b\",\n  \"prompt\": {{ JSON.stringify(\"Você é um avaliador crítico.\\n\\nPergunta: \" + $node['Webhook'].json.body.question + \"\\n\\nResposta gerada:\\n\" + $node['Analyst'].json.response + \"\\n\\nAvalie de 0 a 10 e diga se está APROVADO ou REPROVADO.\\nFormato:\\nScore: X\\nStatus: APROVADO ou REPROVADO\") }},\n  \"stream\": false\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        352,
+        0
+      ],
+      "id": "d982ac9e-2df9-4a1a-9f2b-09a93d723be4",
+      "name": "Critic"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama3:8b\",\n  \"prompt\": {{ JSON.stringify(\"A resposta abaixo foi reprovada.\\n\\nPergunta: \" + $node['Webhook'].json.body.question + \"\\n\\nResposta anterior:\\n\" + $node['Analyst'].json.response + \"\\n\\nMelhore significativamente a resposta.\") }},\n  \"stream\": false\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        816,
+        192
+      ],
+      "id": "26e14cc5-9922-4dbe-8d77-7ebdb5cca652",
+      "name": "Revision"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  \"question\": $node['Webhook'].json.body.question,\n  \"planner\": $node['Planner'].json.response,\n  \"answer\": $node['Analyst'].json.response,\n  \"critic\": $node['Critic'].json.response\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1072,
+        -16
+      ],
+      "id": "43fc16e1-aa94-4982-8d01-e2c5ad7be9e9",
+      "name": "Respond to Webhook (Analyst Version)"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  \"question\": $node['Webhook'].json.body.question,\n  \"planner\": $node['Planner'].json.response,\n  \"answer\": $node['Revision'] ? $node['Revision'].json.response : $node['Analyst'].json.response,\n  \"critic\": $node['Critic'].json.response\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1088,
+        192
+      ],
+      "id": "05766e16-dfe9-44e5-9478-5e5c3f22a050",
+      "name": "Respond to Webhook1 (Revision Version)"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Planner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook (Analyst Version)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Planner": {
+      "main": [
+        [
+          {
+            "node": "Analyst",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyst": {
+      "main": [
+        [
+          {
+            "node": "Critic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Critic": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Revision": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1 (Revision Version)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook (Analyst Version)": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "d5f253a8-410e-46e5-af53-d58e3aabcc00",
+  "meta": {
+    "instanceId": "ca8314b899f62ac362cc68e2f3314fea8a192dc328ee94d3a961352147932fca"
+  },
+  "id": "wDXbUvsQcH0P0Y6G",
+  "tags": []
+}
